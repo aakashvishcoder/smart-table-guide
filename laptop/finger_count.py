@@ -1,26 +1,35 @@
 """Smart Table Guide - laptop side.
 
 Counts raised fingers (both hands, 1-10) with OpenCV + MediaPipe Hands and
-sends the confirmed party size to the Arduino over USB serial.
+sends the confirmed party size to the Arduino over USB serial. Hold the number
+still for 2 seconds to confirm it.
 
 Setup:
-    pip install opencv-python mediapipe pyserial
+    pip install opencv-python mediapipe pyserial pyobjc-framework-AVFoundation
     (Uses the MediaPipe Tasks HandLandmarker API, which works on current
     mediapipe releases. The ~8 MB hand model downloads automatically on the
     first run, so the laptop needs internet once.)
 
 Run:
-    python finger_count.py --port COM5            (Windows)
-    python finger_count.py --port /dev/tty.usbserial-XXXX   (Mac)
-    python finger_count.py                        (no Arduino: prints only)
+    python finger_count.py                 (finds the Arduino's USB port itself;
+                                            with none plugged in it just prints)
+    python finger_count.py --port COM5     (pick the port yourself)
+
+Sent to the Arduino, one per line (firmware/table_finder/table_finder.ino):
+    C<n> = number being shown   P<n> = confirmed party size
+    R = reset all tables + servo to 0 (also sent on exit)        F<t> = table t is free again  (C<n> is ignored by the sketch)
 
 Keys in the video window:
     q = quit    r = reset all tables    1-6 = mark that table free
 """
 
 import argparse
+import atexit
+from collections import Counter, deque
 import math
 import os
+import signal
+import sys
 import time
 import urllib.request
 
@@ -30,11 +39,13 @@ from mediapipe.tasks.python import BaseOptions, vision
 
 try:
     import serial
+    from serial.tools import list_ports
 except ImportError:
     serial = None
 
 HOLD_SECONDS = 2.0      # count must stay the same this long to confirm
 COOLDOWN_SECONDS = 5.0  # pause after seating so one group isn't counted twice
+SMOOTH_FRAMES = 7       # majority vote over this many frames to kill flicker
 
 MODEL_URL = ("https://storage.googleapis.com/mediapipe-models/hand_landmarker/"
              "hand_landmarker/float16/1/hand_landmarker.task")
@@ -42,24 +53,42 @@ MODEL_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "hand_land
 CONNECTIONS = [(c.start, c.end) for c in vision.HandLandmarksConnections.HAND_CONNECTIONS]
 
 TIPS = [8, 12, 16, 20]  # index, middle, ring, pinky fingertips
-PIPS = [6, 10, 14, 18]  # their middle joints
+MCPS = [5, 9, 13, 17]   # their knuckles
+FINGER_RATIO = 1.3      # finger is up when tip is this x farther from the wrist than its knuckle (curled <1.2, up >1.45)
+THUMB_RATIO = 1.4       # thumb is out when tip-to-pinky-knuckle > this x palm width; raise if a tucked thumb counts
+
+
+def mac_camera_index():
+    """Index of the built-in Mac camera, so a nearby iPhone (Continuity Camera) can't grab index 0."""
+    try:
+        import AVFoundation as av
+    except ImportError:
+        return 0
+    # Same list and order OpenCV builds its indices from: video + muxed devices, sorted by uniqueID.
+    devices = (list(av.AVCaptureDevice.devicesWithMediaType_(av.AVMediaTypeVideo))
+               + list(av.AVCaptureDevice.devicesWithMediaType_(av.AVMediaTypeMuxed)))
+    devices.sort(key=lambda d: str(d.uniqueID()))
+    for i, d in enumerate(devices):
+        if d.deviceType() == av.AVCaptureDeviceTypeBuiltInWideAngleCamera:
+            return i
+    return 0
 
 
 def dist(a, b):
-    return math.hypot(a.x - b.x, a.y - b.y)
+    return math.dist((a.x, a.y, a.z), (b.x, b.y, b.z))
 
 
 def count_fingers(lm):
     """Count raised fingers on one hand from its 21 landmarks."""
     wrist = lm[0]
     n = 0
-    # A finger is up when its tip is farther from the wrist than its middle joint.
-    for tip, pip in zip(TIPS, PIPS):
-        if dist(lm[tip], wrist) > dist(lm[pip], wrist):
+    # A finger is up when its tip is clearly farther from the wrist than its knuckle.
+    for tip, mcp in zip(TIPS, MCPS):
+        if dist(lm[tip], wrist) > FINGER_RATIO * dist(lm[mcp], wrist):
             n += 1
-    # Thumb is up when its tip is farther from the pinky knuckle than its IP joint.
-    # Works for either hand without needing handedness.
-    if dist(lm[4], lm[17]) > dist(lm[3], lm[17]) * 1.15:
+    # Thumb is out when its tip is well clear of the palm: far from the pinky knuckle
+    # compared to the palm width. Tucked ~0.8-1.2, out ~1.8-2.5. Works for either hand.
+    if dist(lm[4], lm[17]) > THUMB_RATIO * dist(lm[5], lm[17]):
         n += 1
     return n
 
@@ -70,11 +99,13 @@ def load_landmarker():
         urllib.request.urlretrieve(MODEL_URL, MODEL_PATH)
     opts = vision.HandLandmarkerOptions(
         base_options=BaseOptions(model_asset_path=MODEL_PATH),
+        # VIDEO mode tracks hands between frames, so a hand found once stays found
+        # (IMAGE mode had to re-win palm detection every frame and kept dropping hand #2).
         running_mode=vision.RunningMode.VIDEO,
         num_hands=2,
-        min_hand_detection_confidence=0.7,
-        min_hand_presence_confidence=0.6,
-        min_tracking_confidence=0.6,
+        min_hand_detection_confidence=0.4,
+        min_hand_presence_confidence=0.4,
+        min_tracking_confidence=0.4,
     )
     return vision.HandLandmarker.create_from_options(opts)
 
@@ -88,14 +119,23 @@ def draw_hand(frame, lm):
         cv2.circle(frame, p, 4, (0, 0, 255), -1)
 
 
+def find_arduino():
+    """First USB serial device (Bluetooth ports have no USB vendor id), or None."""
+    return next((p.device for p in list_ports.comports() if p.vid is not None), None)
+
+
 class Link:
     """Thin wrapper so the script still runs with no Arduino plugged in."""
 
     def __init__(self, port):
         self.ser = None
+        if serial and not port:
+            port = find_arduino()
+            print(f"Arduino found on {port}" if port else "No Arduino found - printing only")
         if port and serial:
             self.ser = serial.Serial(port, 115200, timeout=0)
             time.sleep(2)  # Nano resets when the port opens
+            atexit.register(self.home)
         elif port:
             print("pyserial not installed - running without Arduino")
 
@@ -103,6 +143,14 @@ class Link:
         print(">>", msg)
         if self.ser:
             self.ser.write((msg + "\n").encode())
+
+    def home(self):
+        """On exit: free all tables and send the servo back to 0."""
+        try:
+            self.send("R")
+            self.ser.flush()
+        except OSError:
+            pass  # Arduino already unplugged
 
     def read_lines(self):
         out = []
@@ -114,18 +162,25 @@ class Link:
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--port", help="Arduino serial port")
-    ap.add_argument("--camera", type=int, default=0)
+    ap.add_argument("--port", help="Arduino serial port (default: auto-detect)")
+    ap.add_argument("--camera", type=int, help="camera index (default: built-in Mac camera)")
     args = ap.parse_args()
 
+    # Closing the terminal or `kill` should still run the atexit reset.
+    for sig in (signal.SIGTERM, signal.SIGHUP):
+        signal.signal(sig, lambda *_: sys.exit(0))
     link = Link(args.port)
-    cap = cv2.VideoCapture(args.camera)
+    cap = cv2.VideoCapture(mac_camera_index() if args.camera is None else args.camera)
+    if not cap.isOpened():
+        raise SystemExit("Camera failed to open. On macOS: System Settings > Privacy & Security > "
+                         "Camera > enable your terminal app, then restart it. Or try --camera 1.")
     landmarker = load_landmarker()
-    start = time.time()
 
     candidate, since, sent = 0, time.time(), False
     cooldown_until = 0.0
     last_reply = ""
+    recent = deque(maxlen=SMOOTH_FRAMES)
+    stamp = 0
 
     while True:
         ok, frame = cap.read()
@@ -134,12 +189,14 @@ def main():
         frame = cv2.flip(frame, 1)  # mirror so it feels natural
         rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
         image = mp.Image(image_format=mp.ImageFormat.SRGB, data=rgb)
-        res = landmarker.detect_for_video(image, int((time.time() - start) * 1000))
+        stamp = max(stamp + 1, int(time.monotonic() * 1000))  # must strictly increase
+        res = landmarker.detect_for_video(image, stamp)
 
-        total = 0
         for hand in res.hand_landmarks:
             draw_hand(frame, hand)
-            total += count_fingers(hand)
+        # World landmarks are 3D meters, so counting isn't skewed by the 16:9 frame.
+        recent.append(sum(count_fingers(hand) for hand in res.hand_world_landmarks))
+        total = Counter(recent).most_common(1)[0][0]
 
         now = time.time()
         if now >= cooldown_until:

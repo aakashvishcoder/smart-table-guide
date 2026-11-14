@@ -1,3 +1,4 @@
 opencv-python
 mediapipe
 pyserial
+pyobjc-framework-AVFoundation; sys_platform == "darwin"
