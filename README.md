@@ -18,6 +18,7 @@ Gestures:
 - **Number** held 2 s: seat a party of that size (a party of 1 holds up an index finger).
 - **Fist** held 2 s, then a number: seat an accessible party (tables 1-2 only).
 - **Thumbs-up** held 1 s, then a table number: free that table.
+- **Thumbs-down** held 1 s, then a table number: reserve that table (staff: maintenance, or a party sat at the wrong table). Refused if the table is already taken.
 
 The video window shows a free/taken panel for every table. Keys: `q` quit, `r` reset all tables, `1`-`6` mark that table free.
 On macOS, allow your terminal app under System Settings > Privacy & Security > Camera.
@@ -42,5 +43,5 @@ Accessible parties only get accessible tables. Other parties get non-accessible 
 
 Serial commands (115200 baud, Newline), also usable from the Serial Monitor:
 `P2` seats a party of 2, `A2` seats an accessible party of 2, `F1` frees table 1, `R` frees all tables and returns the servo to 0°.
-`O` lists which tables are in use, `M3` marks table 3 in use.
+`O` lists which tables are in use, `M3` reserves table 3 (points the arrow at it; refused with "Table 3 is taken" if someone is there).
 Close the Serial Monitor before running the Python script, since only one program can use the port.

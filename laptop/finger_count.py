@@ -19,6 +19,7 @@ Gestures:
     number held 2 s         = seat a party of that size
     fist held 2 s, then a number   = seat an accessible party (tables 1-2 only)
     thumbs-up held 1 s, then a number = free that table
+    thumbs-down held 1 s, then a number = reserve that table (refused if taken)
 
 Sent to the Arduino, one per line (firmware/table_finder/table_finder.ino):
     C<n> = number being shown (ignored)   P<n> = party size   A<n> = accessible party
@@ -74,6 +75,7 @@ ACCESS_TIMEOUT = 10.0   # accessible mode cancels if no group is seated in this 
 FREE_TIMEOUT = 6.0      # free mode cancels if no table number is started in this time
 STATUS_RE = re.compile(r"Is table (\d+) in use\? (\d)")
 SEATED_RE = re.compile(r"Tables? (\d+)(?:\+(\d+))?$")
+RESERVE_RE = re.compile(r"Table (\d+) is (now in use|taken)$")
 
 DASHBOARD_PORT = 8765
 DASHBOARD_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "dashboard.html")
@@ -114,6 +116,8 @@ class Dashboard:
         elif line == "No table" and self.pending:
             party, acc = self.pending.popleft()
             self.add(kind="full", party=party, accessible=acc)
+        elif (m := RESERVE_RE.match(line)):
+            self.add(kind="reserve" if m[2] == "now in use" else "taken", tables=[int(m[1])])
         elif line.startswith("Freed "):
             self.add(kind="free", tables=[int(line.split()[1])])
         elif line == "All free":
@@ -182,14 +186,18 @@ def fingers_up(lm):
     return up
 
 
-def thumb_points_up(img_lm):
-    """Thumb tip is the highest point of the hand by a margin (image y grows downward)."""
-    others = min(p.y for i, p in enumerate(img_lm) if i not in (3, 4))
-    return img_lm[4].y < others - THUMB_UP_MARGIN
+def thumb_direction(img_lm):
+    """"up"/"down" when the thumb tip is the highest/lowest point of the hand by a margin, else None."""
+    ys = [p.y for i, p in enumerate(img_lm) if i not in (3, 4)]   # image y grows downward
+    if img_lm[4].y < min(ys) - THUMB_UP_MARGIN:
+        return "up"
+    if img_lm[4].y > max(ys) + THUMB_UP_MARGIN:
+        return "down"
+    return None
 
 
 def classify(res):
-    """One frame -> None (no hands), "fist", "thumb" (thumbs-up) or a finger count."""
+    """One frame -> None (no hands), "fist", "thumb" (up), "thumbdown" or a finger count."""
     if not res.hand_world_landmarks:
         return None
     # World landmarks are 3D meters, so counting isn't skewed by the 16:9 frame.
@@ -197,9 +205,8 @@ def classify(res):
     # Gestures ignore the thumb's spread: in a real fist it wraps across the fingers
     # and often counts as "out", so judge by the four fingers and the thumb's direction.
     if not any(any(u[1:]) for u in ups):
-        if len(ups) == 1 and thumb_points_up(res.hand_landmarks[0]):
-            return "thumb"
-        return "fist"
+        direction = thumb_direction(res.hand_landmarks[0]) if len(ups) == 1 else None
+        return {"up": "thumb", "down": "thumbdown"}.get(direction, "fist")
     return sum(sum(u) for u in ups)
 
 
@@ -327,7 +334,7 @@ def main():
         if mode and now > mode_until and not isinstance(candidate, int):
             print(f"== {mode} mode timed out")
             mode = None
-        hold = {"fist": FIST_SECONDS, "thumb": THUMB_SECONDS}.get(candidate, HOLD_SECONDS)
+        hold = {"fist": FIST_SECONDS, "thumb": THUMB_SECONDS, "thumbdown": THUMB_SECONDS}.get(candidate, HOLD_SECONDS)
         if now >= cooldown_until:
             if token != candidate:
                 candidate, since, fired = token, now, False
@@ -343,8 +350,11 @@ def main():
                 elif candidate == "thumb":
                     mode, mode_until = "free", now + FREE_TIMEOUT
                     print("== free mode: show table number")
-                elif mode == "free":
-                    act(f"F{candidate}")
+                elif candidate == "thumbdown":
+                    mode, mode_until = "reserve", now + FREE_TIMEOUT
+                    print("== reserve mode: show table number")
+                elif mode in ("free", "reserve"):
+                    act(f"{'F' if mode == 'free' else 'M'}{candidate}")
                     mode = None
                 else:
                     act(f"{'A' if mode == 'access' else 'P'}{candidate}")
@@ -368,7 +378,8 @@ def main():
         cv2.putText(frame, f"Arduino: {last_reply}", (10, 60),
                     cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 0), 2)
         if mode:
-            badge = "ACCESSIBLE: show party size" if mode == "access" else "FREE: show table number"
+            badge = {"access": "ACCESSIBLE: show party size", "free": "FREE: show table number",
+                     "reserve": "RESERVE: show table number"}[mode]
             cv2.putText(frame, f"{badge} ({max(mode_until - now, 0):.0f}s)", (10, 95),
                         cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 165, 255), 2)
 

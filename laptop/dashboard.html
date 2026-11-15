@@ -102,6 +102,7 @@ h2 em { font-style: normal; color: var(--accent); display: block; }
 .chip { font-size: 0.72rem; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; padding: 3px 9px; border-radius: 999px; white-space: nowrap; }
 .chip.free { border: 1px solid var(--rule); color: var(--muted); }
 .chip.taken { background: var(--accent); color: var(--on-hero); }
+.chip.reserved { background: var(--accent-soft); color: var(--ink); }
 .tag { display: inline-block; margin-left: 6px; font-size: 0.68rem; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--accent); }
 
 /* Charts */
@@ -204,6 +205,7 @@ section { scroll-margin-top: 12px; }
           <div class="legend">
             <span><i class="sw"></i> Free</span>
             <span><i class="sw taken"></i> Taken</span>
+            <span><i class="sw" style="background:var(--accent-soft)"></i> Reserved by staff</span>
             <span><i class="sw" style="border-style:dashed"></i> Accessible table</span>
           </div>
         </div>
@@ -324,6 +326,7 @@ function replay(events) {
   let last = null;
   for (const e of events) {
     if (e.kind === "seat") { e.tables.forEach(id => state[id] = { party: e.party, accessible: e.accessible, since: e.t, with: e.tables }); last = e; }
+    if (e.kind === "reserve") { e.tables.forEach(id => state[id] = { reserved: true, since: e.t, with: e.tables }); last = e; }
     if (e.kind === "free") e.tables.forEach(id => state[id] = null);   // like F<t>: only the named tables
     if (e.kind === "reset") TABLES.forEach(t => state[t.id] = null);
     series.push([e.t, TABLES.filter(t => state[t.id]).length]);
@@ -375,10 +378,11 @@ function drawPlan(svg, st) {
       const a = (i / t.seats) * Math.PI * 2 - Math.PI / 2;
       el("circle", { cx: x + Math.cos(a) * (r + 8), cy: y + Math.sin(a) * (r + 8), r: 4.5, fill: "var(--surface)", stroke: "var(--muted)", "stroke-width": 1 }, svg);
     }
-    el("circle", { cx: x, cy: y, r, fill: s ? "var(--accent)" : "var(--surface)", stroke: "var(--accent)", "stroke-width": 1.8, "stroke-dasharray": t.accessible ? "4 3" : "none" }, svg);
-    const label = el("text", { x, y: y + 6, "text-anchor": "middle", "font-family": "var(--font-display)", "font-size": 18, fill: s ? "var(--on-hero)" : "var(--ink)" }, svg);
+    const fill = !s ? "var(--surface)" : s.reserved ? "var(--accent-soft)" : "var(--accent)";
+    el("circle", { cx: x, cy: y, r, fill, stroke: "var(--accent)", "stroke-width": 1.8, "stroke-dasharray": t.accessible ? "4 3" : "none" }, svg);
+    const label = el("text", { x, y: y + 6, "text-anchor": "middle", "font-family": "var(--font-display)", "font-size": 18, fill: s && !s.reserved ? "var(--on-hero)" : "var(--ink)" }, svg);
     label.textContent = t.id;
-    if (s) el("text", { x, y: y + r + 24, "text-anchor": "middle", class: "axis" }, svg).textContent = `party of ${s.party}`;
+    if (s) el("text", { x, y: y + r + 24, "text-anchor": "middle", class: "axis" }, svg).textContent = s.reserved ? "reserved" : `party of ${s.party}`;
   }
   // The arrow: the laser-cut hub and pointer, seen from above
   const g = el("g", { id: "needle" }, svg);
@@ -406,7 +410,7 @@ function drawStanding(svg, st, last) {
     const tx = target.reduce((a, t) => a + px(t), 0) / target.length, ty = Math.min(...target.map(py));
     el("path", { d: `M${cx - 26},330 L${tx - 18},${ty} L${tx + 18},${ty} L${cx + 26},330 Z`, fill: "var(--accent)", opacity: 0.16 }, svg);
     el("path", { d: `M${tx - 9},${ty - 70} l9,11 9,-11`, fill: "none", stroke: "var(--accent)", "stroke-width": 3 }, svg);
-    el("text", { x: tx, y: ty - 78, "text-anchor": "middle", class: "axis", "font-weight": 600, fill: "var(--accent)" }, svg).textContent = "YOUR TABLE";
+    el("text", { x: tx, y: ty - 78, "text-anchor": "middle", class: "axis", "font-weight": 600, fill: "var(--accent)" }, svg).textContent = last.kind === "reserve" ? "RESERVED" : "YOUR TABLE";
   }
   // Far tables first so near ones overlap them
   for (const t of [...TABLES].sort((a, b) => b.dist - a.dist)) {
@@ -414,7 +418,7 @@ function drawStanding(svg, st, last) {
     const rx = (16 + t.seats * 4) * s, ry = rx * 0.3, h = 30 * s;
     el("ellipse", { cx: x, cy: y + 2, rx: rx * 0.8, ry: ry * 0.6, fill: "var(--rule)" }, svg);
     el("rect", { x: x - 2.5 * s, y: y - h, width: 5 * s, height: h, fill: "var(--muted)" }, svg);
-    el("ellipse", { cx: x, cy: y - h, rx, ry, fill: st_ ? "var(--accent)" : "var(--surface)", stroke: "var(--accent)", "stroke-width": 1.6, "stroke-dasharray": t.accessible ? "4 3" : "none" }, svg);
+    el("ellipse", { cx: x, cy: y - h, rx, ry, fill: !st_ ? "var(--surface)" : st_.reserved ? "var(--accent-soft)" : "var(--accent)", stroke: "var(--accent)", "stroke-width": 1.6, "stroke-dasharray": t.accessible ? "4 3" : "none" }, svg);
     const lbl = el("text", { x, y: y - h - ry - 8, "text-anchor": "middle", "font-family": "var(--font-display)", "font-size": 13 + 6 * s, fill: "var(--ink)" }, svg);
     lbl.textContent = t.id;
   }
@@ -491,7 +495,8 @@ function render() {
   // Hero: where the arrow points now
   if (last) {
     $("nowTable").textContent = tablesLabel(last.tables);
-    $("nowWhat").textContent = `Party of ${last.party}${last.accessible ? ", accessible" : ""} · ${clock(last.t)} · servo ${Math.round(pointAngle(last.tables))}°`;
+    const who = last.kind === "reserve" ? "Reserved by staff" : `Party of ${last.party}${last.accessible ? ", accessible" : ""}`;
+    $("nowWhat").textContent = `${who} · ${clock(last.t)} · servo ${Math.round(pointAngle(last.tables))}°`;
     needle.target = pointAngle(last.tables);
   } else {
     $("nowTable").textContent = "Home";
@@ -519,9 +524,12 @@ function render() {
   $("tableList").innerHTML = TABLES.map(t => {
     const s = state[t.id];
     const next = t.adj.length ? ` · joins ${t.adj.join(" & ")}` : "";
-    const what = s ? `<b>Party of ${s.party}</b>${s.with.length === 2 ? ` with table ${s.with.find(x => x !== t.id)}` : ""} · ${mins(now - s.since)}` : `${t.seats} seats${next}`;
+    const what = !s ? `${t.seats} seats${next}`
+      : s.reserved ? `<b>Out of service</b> · ${mins(now - s.since)}`
+      : `<b>Party of ${s.party}</b>${s.with.length === 2 ? ` with table ${s.with.find(x => x !== t.id)}` : ""} · ${mins(now - s.since)}`;
+    const chip = !s ? ["free", "Free"] : s.reserved ? ["reserved", "Reserved"] : ["taken", "Taken"];
     return `<li><span class="num">${t.id}</span><span class="what">${what}${t.accessible ? '<span class="tag">Accessible</span>' : ""}</span>
-      <span class="chip ${s ? "taken" : "free"}">${s ? "Taken" : "Free"}</span></li>`;
+      <span class="chip ${chip[0]}">${chip[1]}</span></li>`;
   }).join("");
 
   // Charts
@@ -536,6 +544,8 @@ function render() {
     if (e.kind === "seat") title = `<h4>Party of ${e.party} → <span>${tablesLabel(e.tables)}</span></h4>`;
     else if (e.kind === "full") title = `<h4 class="full">Party of ${e.party} · <span>Full, please wait</span></h4>`;
     else if (e.kind === "free") title = `<h4 class="quiet">${tablesLabel(e.tables)} freed</h4>`;
+    else if (e.kind === "reserve") title = `<h4 class="quiet">${tablesLabel(e.tables)} reserved</h4>`;
+    else if (e.kind === "taken") title = `<h4 class="full">${tablesLabel(e.tables)} · <span>already taken, not reserved</span></h4>`;
     else title = `<h4 class="quiet">All tables reset</h4>`;
     return `<li><div class="meta"><b>${clock(e.t)}</b><i></i><span>${who}</span></div>${title}</li>`;
   });

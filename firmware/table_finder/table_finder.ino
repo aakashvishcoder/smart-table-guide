@@ -95,7 +95,7 @@ void setup() {
 // Commands from finger_count.py, one per line:
 //   P<n> seat a group of n   A<n> seat an accessible group of n
 //   R free all tables + servo to 0   F<t> free table t
-//   O list which tables are in use   M<t> mark table t in use
+//   O list which tables are in use   M<t> reserve table t (refused if already taken)
 //   (C<n> = live count, ignored)
 void loop() {
     if (!Serial.available()) return;
@@ -128,13 +128,22 @@ void loop() {
         for (int i = 0; i < NUM_TABLES; ++i) {
             if (tables[i].Id() == id) t = &tables[i];
         }
-        if (t) {
+        char line2[20];
+        snprintf(line2, sizeof(line2), "Table %d", id);
+        if (!t) {
+            Serial.println("No table");
+        } else if (t->InUse()) {
+            Show("Already taken", line2);   // staff reserve refused: someone is there
+            Serial.print("Table ");
+            Serial.print(id);
+            Serial.println(" is taken");
+        } else {
             t->Direct();
+            servo.write(t->Angle());
+            Show("Reserved", line2);
             Serial.print("Table ");
             Serial.print(id);
             Serial.println(" is now in use");
-        } else {
-            Serial.println("No table");
         }
     }
 }
