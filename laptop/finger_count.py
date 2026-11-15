@@ -15,9 +15,15 @@ Run:
                                             with none plugged in it just prints)
     python finger_count.py --port COM5     (pick the port yourself)
 
+Gestures:
+    number held 2 s         = seat a party of that size
+    fist held 2 s, then a number   = seat an accessible party (tables 1-2 only)
+    thumbs-up held 1 s, then a number = free that table
+
 Sent to the Arduino, one per line (firmware/table_finder/table_finder.ino):
-    C<n> = number being shown   P<n> = confirmed party size
-    R = reset all tables + servo to 0 (also sent on exit)        F<t> = table t is free again  (C<n> is ignored by the sketch)
+    C<n> = number being shown (ignored)   P<n> = party size   A<n> = accessible party
+    F<t> = table t is free again   R = reset all tables + servo to 0 (also sent on exit)
+    O = table status, drawn as the panel on the right
 
 Keys in the video window:
     q = quit    r = reset all tables    1-6 = mark that table free
@@ -28,6 +34,7 @@ import atexit
 from collections import Counter, deque
 import math
 import os
+import re
 import signal
 import sys
 import time
@@ -56,6 +63,13 @@ TIPS = [8, 12, 16, 20]  # index, middle, ring, pinky fingertips
 MCPS = [5, 9, 13, 17]   # their knuckles
 FINGER_RATIO = 1.3      # finger is up when tip is this x farther from the wrist than its knuckle (curled <1.2, up >1.45)
 THUMB_RATIO = 1.4       # thumb is out when tip-to-pinky-knuckle > this x palm width; raise if a tucked thumb counts
+THUMB_UP_MARGIN = 0.03  # thumbs-up: tip must be this far (fraction of frame height) above the rest of the hand
+
+FIST_SECONDS = 2.0      # hold a fist this long -> next group is accessible
+THUMB_SECONDS = 1.0     # hold a thumbs-up this long -> free mode (then show a table number)
+ACCESS_TIMEOUT = 10.0   # accessible mode cancels if no group is seated in this time
+FREE_TIMEOUT = 6.0      # free mode cancels if no table number is started in this time
+STATUS_RE = re.compile(r"Is table (\d+) in use\? (\d)")
 
 
 def mac_camera_index():
@@ -78,19 +92,37 @@ def dist(a, b):
     return math.dist((a.x, a.y, a.z), (b.x, b.y, b.z))
 
 
-def count_fingers(lm):
-    """Count raised fingers on one hand from its 21 landmarks."""
+def fingers_up(lm):
+    """[thumb, index, middle, ring, pinky] raised flags for one hand's 21 landmarks."""
     wrist = lm[0]
-    n = 0
-    # A finger is up when its tip is clearly farther from the wrist than its knuckle.
-    for tip, mcp in zip(TIPS, MCPS):
-        if dist(lm[tip], wrist) > FINGER_RATIO * dist(lm[mcp], wrist):
-            n += 1
     # Thumb is out when its tip is well clear of the palm: far from the pinky knuckle
     # compared to the palm width. Tucked ~0.8-1.2, out ~1.8-2.5. Works for either hand.
-    if dist(lm[4], lm[17]) > THUMB_RATIO * dist(lm[5], lm[17]):
-        n += 1
-    return n
+    up = [dist(lm[4], lm[17]) > THUMB_RATIO * dist(lm[5], lm[17])]
+    # A finger is up when its tip is clearly farther from the wrist than its knuckle.
+    for tip, mcp in zip(TIPS, MCPS):
+        up.append(dist(lm[tip], wrist) > FINGER_RATIO * dist(lm[mcp], wrist))
+    return up
+
+
+def thumb_points_up(img_lm):
+    """Thumb tip is the highest point of the hand by a margin (image y grows downward)."""
+    others = min(p.y for i, p in enumerate(img_lm) if i not in (3, 4))
+    return img_lm[4].y < others - THUMB_UP_MARGIN
+
+
+def classify(res):
+    """One frame -> None (no hands), "fist", "thumb" (thumbs-up) or a finger count."""
+    if not res.hand_world_landmarks:
+        return None
+    # World landmarks are 3D meters, so counting isn't skewed by the 16:9 frame.
+    ups = [fingers_up(hand) for hand in res.hand_world_landmarks]
+    # Gestures ignore the thumb's spread: in a real fist it wraps across the fingers
+    # and often counts as "out", so judge by the four fingers and the thumb's direction.
+    if not any(any(u[1:]) for u in ups):
+        if len(ups) == 1 and thumb_points_up(res.hand_landmarks[0]):
+            return "thumb"
+        return "fist"
+    return sum(sum(u) for u in ups)
 
 
 def load_landmarker():
@@ -129,6 +161,7 @@ class Link:
 
     def __init__(self, port):
         self.ser = None
+        self.buf = ""
         if serial and not port:
             port = find_arduino()
             print(f"Arduino found on {port}" if port else "No Arduino found - printing only")
@@ -139,8 +172,9 @@ class Link:
         elif port:
             print("pyserial not installed - running without Arduino")
 
-    def send(self, msg):
-        print(">>", msg)
+    def send(self, msg, quiet=False):
+        if not quiet:
+            print(">>", msg)
         if self.ser:
             self.ser.write((msg + "\n").encode())
 
@@ -153,11 +187,12 @@ class Link:
             pass  # Arduino already unplugged
 
     def read_lines(self):
-        out = []
-        if self.ser:
-            while self.ser.in_waiting:
-                out.append(self.ser.readline().decode(errors="ignore").strip())
-        return [line for line in out if line]
+        """Complete lines received so far; a half-arrived line waits for the next call."""
+        if not self.ser:
+            return []
+        self.buf += self.ser.read(self.ser.in_waiting).decode(errors="ignore")
+        *lines, self.buf = self.buf.split("\n")
+        return [line.strip() for line in lines if line.strip()]
 
 
 def main():
@@ -176,7 +211,15 @@ def main():
                          "Camera > enable your terminal app, then restart it. Or try --camera 1.")
     landmarker = load_landmarker()
 
-    candidate, since, sent = 0, time.time(), False
+    def act(msg):
+        """Send a table-changing command, then ask for the table status panel."""
+        link.send(msg)
+        link.send("O", quiet=True)
+
+    link.send("O", quiet=True)
+    tables = {}             # table id -> in use, filled from the Arduino's O replies
+    candidate, since, fired = None, time.time(), False
+    mode, mode_until = None, 0.0   # None, "access" or "free"
     cooldown_until = 0.0
     last_reply = ""
     recent = deque(maxlen=SMOOTH_FRAMES)
@@ -194,41 +237,74 @@ def main():
 
         for hand in res.hand_landmarks:
             draw_hand(frame, hand)
-        # World landmarks are 3D meters, so counting isn't skewed by the 16:9 frame.
-        recent.append(sum(count_fingers(hand) for hand in res.hand_world_landmarks))
-        total = Counter(recent).most_common(1)[0][0]
+        recent.append(classify(res))
+        token = Counter(recent).most_common(1)[0][0]
 
         now = time.time()
+        # Modes time out, but not while someone is part-way through holding a number.
+        if mode and now > mode_until and not isinstance(candidate, int):
+            print(f"== {mode} mode timed out")
+            mode = None
+        hold = {"fist": FIST_SECONDS, "thumb": THUMB_SECONDS}.get(candidate, HOLD_SECONDS)
         if now >= cooldown_until:
-            if total != candidate:
-                candidate, since, sent = total, now, False
-                if candidate > 0:
-                    link.send(f"C{candidate}")
-            elif candidate > 0 and not sent and now - since >= HOLD_SECONDS:
-                link.send(f"P{candidate}")
-                sent = True
-                cooldown_until = now + COOLDOWN_SECONDS
+            if token != candidate:
+                candidate, since, fired = token, now, False
+                if isinstance(token, int):
+                    link.send(f"C{token}")
+                elif token:
+                    print(f"-- {token}")  # fist / thumb seen, not yet held long enough
+            elif candidate is not None and not fired and now - since >= hold:
+                fired = True
+                if candidate == "fist":
+                    mode, mode_until = "access", now + ACCESS_TIMEOUT
+                    print("== accessible mode: show party size")
+                elif candidate == "thumb":
+                    mode, mode_until = "free", now + FREE_TIMEOUT
+                    print("== free mode: show table number")
+                elif mode == "free":
+                    act(f"F{candidate}")
+                    mode = None
+                else:
+                    act(f"{'A' if mode == 'access' else 'P'}{candidate}")
+                    mode = None
+                    cooldown_until = now + COOLDOWN_SECONDS
 
         for reply in link.read_lines():
+            m = STATUS_RE.match(reply)
+            if m:
+                tables[int(m[1])] = m[2] == "1"
+                continue
             last_reply = reply
             print("<<", reply)
 
         # On-screen debug info
-        held = min(now - since, HOLD_SECONDS) if candidate and not sent else 0
+        held = min(now - since, hold) if candidate is not None and not fired else 0
         status = "cooldown" if now < cooldown_until else f"hold {held:.1f}s"
-        cv2.putText(frame, f"Fingers: {total}  ({status})", (10, 30),
+        cv2.putText(frame, f"Fingers: {token}  ({status})", (10, 30),
                     cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 255, 0), 2)
         cv2.putText(frame, f"Arduino: {last_reply}", (10, 60),
                     cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 0), 2)
+        if mode:
+            badge = "ACCESSIBLE: show party size" if mode == "access" else "FREE: show table number"
+            cv2.putText(frame, f"{badge} ({max(mode_until - now, 0):.0f}s)", (10, 95),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 165, 255), 2)
+
+        # Table status panel down the right edge.
+        w = frame.shape[1]
+        if tables:
+            cv2.rectangle(frame, (w - 200, 10), (w - 10, 20 + 30 * len(tables)), (0, 0, 0), -1)
+        for i, (tid, used) in enumerate(sorted(tables.items())):
+            cv2.putText(frame, f"Table {tid}: {'taken' if used else 'free'}", (w - 190, 35 + 30 * i),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255) if used else (0, 255, 0), 2)
         cv2.imshow("Smart Table Guide", frame)
 
         key = cv2.waitKey(1) & 0xFF
         if key == ord("q"):
             break
         if key == ord("r"):
-            link.send("R")
+            act("R")
         if ord("1") <= key <= ord("6"):
-            link.send(f"F{chr(key)}")
+            act(f"F{chr(key)}")
 
     landmarker.close()
     cap.release()

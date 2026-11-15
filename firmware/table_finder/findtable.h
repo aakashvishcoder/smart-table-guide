@@ -10,10 +10,19 @@ struct TableResult {
     int second;
 };
 
+// Which tables FindTable may use.
+const int ANY_TABLE = -1;          // accessible or not
+const int NON_ACCESSIBLE_ONLY = 0;
+const int ACCESSIBLE_ONLY = 1;
+
+inline bool Allowed(const table& t, int access) {
+    return access == ANY_TABLE || t.Accessible() == (access == ACCESSIBLE_ONLY);
+}
+
 // Finds the free table, or pair of adjacent free tables, that seats
 // `groupSize` with the fewest extra chairs; on a tie a single table beats a pair.
-// Accessibility is ignored.
-inline TableResult FindTable(int groupSize,
+// Only tables passing Allowed(t, access) are used.
+inline TableResult FindTable(int groupSize, int access,
                              const table tables[], int numTables)
 {
     TableResult best = { -1, -1 };
@@ -21,7 +30,7 @@ inline TableResult FindTable(int groupSize,
 
     for (int i = 0; i < numTables; ++i) {
         const table& t = tables[i];
-        if (t.InUse()) continue;
+        if (t.InUse() || !Allowed(t, access)) continue;
 
         // Single table (also wins a tie against a pair)
         int extra = t.Chairs() - groupSize;
@@ -38,7 +47,7 @@ inline TableResult FindTable(int groupSize,
             if (adj[k] == -1) continue;
             for (int j = 0; j < numTables; ++j) {
                 const table& u = tables[j];
-                if (u.Id() != adj[k] || u.InUse()) continue;
+                if (u.Id() != adj[k] || u.InUse() || !Allowed(u, access)) continue;
                 extra = t.Chairs() + u.Chairs() - groupSize;
                 if (extra >= 0 && (bestExtra < 0 || extra < bestExtra)) {
                     bestExtra = extra;

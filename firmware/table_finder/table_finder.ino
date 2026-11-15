@@ -53,9 +53,14 @@ void Show(const char* line1, const char* line2) {
     } while (u8g2.nextPage());
 }
 
-// Same logic the old setup() ran once, now run per group.
-void Seat(int groupSize) {
-    TableResult r = FindTable(groupSize, tables, NUM_TABLES);
+// Accessible groups only get accessible tables. Everyone else gets the
+// non-accessible tables first and falls back to accessible ones when full.
+void Seat(int groupSize, bool accessible) {
+    TableResult r = FindTable(groupSize, accessible ? ACCESSIBLE_ONLY : NON_ACCESSIBLE_ONLY,
+                              tables, NUM_TABLES);
+    if (r.first == -1 && !accessible) {
+        r = FindTable(groupSize, ANY_TABLE, tables, NUM_TABLES);
+    }
 
     if (r.first != -1) {
         servo.write(AngleFor(r));
@@ -64,9 +69,11 @@ void Seat(int groupSize) {
 
     char line1[20];
     char line2[20];
-    snprintf(line1, sizeof(line1), "Group of %d", groupSize);
+    snprintf(line1, sizeof(line1), accessible ? "Group of %d (acc)" : "Group of %d", groupSize);
     if (r.first == -1) {
-        snprintf(line2, sizeof(line2), "No table");
+        Show("Full - please wait", "No table");
+        Serial.println("No table");
+        return;
     } else if (r.second == -1) {
         snprintf(line2, sizeof(line2), "Table %d", r.first);
     } else {
@@ -86,15 +93,16 @@ void setup() {
 }
 
 // Commands from finger_count.py, one per line:
-//   P<n> seat a group of n   R free all tables + servo to 0   F<t> free table t
+//   P<n> seat a group of n   A<n> seat an accessible group of n
+//   R free all tables + servo to 0   F<t> free table t
 //   O list which tables are in use   M<t> mark table t in use
 //   (C<n> = live count, ignored)
 void loop() {
     if (!Serial.available()) return;
     char cmd = Serial.read();
-    if (cmd == 'P') {
+    if (cmd == 'P' || cmd == 'A') {
         int n = Serial.parseInt();
-        if (n > 0) Seat(n);
+        if (n > 0) Seat(n, cmd == 'A');
     } else if (cmd == 'R') {
         for (int i = 0; i < NUM_TABLES; ++i) tables[i].Clear();
         servo.write(0);
