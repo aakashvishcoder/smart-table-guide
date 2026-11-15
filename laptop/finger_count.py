@@ -32,11 +32,14 @@ Keys in the video window:
 import argparse
 import atexit
 from collections import Counter, deque
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+import json
 import math
 import os
 import re
 import signal
 import sys
+import threading
 import time
 import urllib.request
 
@@ -70,6 +73,67 @@ THUMB_SECONDS = 1.0     # hold a thumbs-up this long -> free mode (then show a t
 ACCESS_TIMEOUT = 10.0   # accessible mode cancels if no group is seated in this time
 FREE_TIMEOUT = 6.0      # free mode cancels if no table number is started in this time
 STATUS_RE = re.compile(r"Is table (\d+) in use\? (\d)")
+SEATED_RE = re.compile(r"Tables? (\d+)(?:\+(\d+))?$")
+
+DASHBOARD_PORT = 8765
+DASHBOARD_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "dashboard.html")
+
+
+class Dashboard:
+    """Turns Arduino replies into events and serves them with dashboard.html on localhost."""
+
+    def __init__(self):
+        self.events = []
+        self.pending = deque()   # (party, accessible) waiting for the Arduino's answer
+
+    def sent(self, msg):
+        if msg[0] in "PA":
+            self.pending.append((int(msg[1:]), msg[0] == "A"))
+
+    def reply(self, line):
+        t = int(time.time() * 1000)
+        m = SEATED_RE.match(line)
+        if m and self.pending:
+            party, acc = self.pending.popleft()
+            tables = [int(g) for g in m.groups() if g]
+            self.events.append({"t": t, "kind": "seat", "party": party, "accessible": acc, "tables": tables})
+        elif line == "No table" and self.pending:
+            party, acc = self.pending.popleft()
+            self.events.append({"t": t, "kind": "full", "party": party, "accessible": acc})
+        elif line.startswith("Freed "):
+            self.events.append({"t": t, "kind": "free", "tables": [int(line.split()[1])]})
+        elif line == "All free":
+            self.events.append({"t": t, "kind": "reset"})
+
+    def serve(self):
+        dash = self
+
+        class Handler(BaseHTTPRequestHandler):
+            def do_GET(self):
+                if self.path.split("?")[0] == "/events":
+                    body, ctype = json.dumps(dash.events).encode(), "application/json"
+                elif self.path in ("/", "/index.html"):
+                    with open(DASHBOARD_PATH, "rb") as f:
+                        body, ctype = f.read(), "text/html; charset=utf-8"
+                else:
+                    self.send_error(404)
+                    return
+                self.send_response(200)
+                self.send_header("Content-Type", ctype)
+                self.send_header("Cache-Control", "no-store")
+                self.end_headers()
+                self.wfile.write(body)
+
+            def log_message(self, *args):
+                pass  # keep the terminal for >> / << lines
+
+        try:
+            server = ThreadingHTTPServer(("127.0.0.1", DASHBOARD_PORT), Handler)
+        except OSError as e:
+            print(f"Dashboard not started ({e}); is another copy running?")
+            return
+        threading.Thread(target=server.serve_forever, daemon=True).start()
+        print(f"Dashboard: http://localhost:{DASHBOARD_PORT}")
 
 
 def mac_camera_index():
@@ -211,9 +275,13 @@ def main():
                          "Camera > enable your terminal app, then restart it. Or try --camera 1.")
     landmarker = load_landmarker()
 
+    dash = Dashboard()
+    dash.serve()
+
     def act(msg):
         """Send a table-changing command, then ask for the table status panel."""
         link.send(msg)
+        dash.sent(msg)
         link.send("O", quiet=True)
 
     link.send("O", quiet=True)
@@ -274,6 +342,7 @@ def main():
             if m:
                 tables[int(m[1])] = m[2] == "1"
                 continue
+            dash.reply(reply)
             last_reply = reply
             print("<<", reply)
 

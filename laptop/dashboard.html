@@ -1,0 +1,557 @@
+<title>Smart Table Guide</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=EB+Garamond:wght@400;500&family=Instrument+Sans:wght@400;500;600&display=swap">
+<style>
+/* Layout: white editorial page, inset burnt-orange hero, serif stat figures on hairlines,
+   then the floor (kiosk view) beside live table status, charts, and the seating log. */
+:root {
+  --bg: #ffffff;
+  --bg-alt: #f7f3ef;          /* warm grey biased toward the orange */
+  --ink: #4a2004;             /* deep burnt brown: headlines, first line */
+  --accent: #bf5700;          /* burnt orange: second headline line, taken tables, arrow */
+  --accent-soft: #f3dcc8;
+  --text: #2b2420;
+  --muted: #6f655e;
+  --rule: #e5ddd5;
+  --surface: #ffffff;
+  --hero-bg: #bf5700;
+  --on-hero: #ffffff;
+  --full: #a8321f;            /* semantic: turned away / full */
+  --font-display: "EB Garamond", "Iowan Old Style", Georgia, serif;
+  --font-body: "Instrument Sans", "Helvetica Neue", Arial, sans-serif;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #15110e; --bg-alt: #1e1814; --ink: #f4e6da; --accent: #e8782a; --accent-soft: #4a2a14;
+    --text: #ece3dc; --muted: #a99d94; --rule: #352b24; --surface: #1b1612;
+    --hero-bg: #9e4700; --on-hero: #ffffff; --full: #e0705e; color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #15110e; --bg-alt: #1e1814; --ink: #f4e6da; --accent: #e8782a; --accent-soft: #4a2a14;
+  --text: #ece3dc; --muted: #a99d94; --rule: #352b24; --surface: #1b1612;
+  --hero-bg: #9e4700; --on-hero: #ffffff; --full: #e0705e; color-scheme: dark;
+}
+
+* { box-sizing: border-box; }
+body { background: var(--bg); color: var(--text); font: 400 16px/1.6 var(--font-body); }
+.wrap {
+  max-width: 1200px; margin: 0 auto;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+}
+.band-alt { background: var(--bg-alt); }
+section .wrap { padding-block: 72px; }
+a { color: inherit; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+
+/* Header */
+header .wrap { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding-block: 22px; flex-wrap: wrap; }
+.brand { display: flex; align-items: center; gap: 12px; text-decoration: none; color: var(--ink); }
+.brand svg { width: 34px; height: 22px; flex: none; }
+.brand span { font: 500 1.35rem/1 var(--font-display); letter-spacing: 0.06em; text-transform: uppercase; }
+nav { display: flex; align-items: center; gap: 22px; flex-wrap: wrap; }
+nav a { text-decoration: none; font-size: 0.9rem; color: var(--muted); }
+nav a:hover { color: var(--accent); }
+.pill { display: inline-flex; align-items: center; gap: 8px; font-size: 0.78rem; font-weight: 500; letter-spacing: 0.06em;
+  text-transform: uppercase; padding: 6px 12px; border: 1px solid var(--rule); border-radius: 999px; color: var(--muted); }
+.pill i { width: 8px; height: 8px; border-radius: 50%; background: var(--muted); }
+.pill.live { color: var(--accent); border-color: var(--accent); }
+.pill.live i { background: var(--accent); animation: blink 1.6s infinite; }
+.pill.lost { color: var(--full); border-color: var(--full); }
+.pill.lost i { background: var(--full); }
+@keyframes blink { 50% { opacity: 0.25; } }
+
+/* Hero */
+.hero { background: var(--hero-bg); color: var(--on-hero); display: grid; grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr);
+  gap: 32px; padding: clamp(28px, 5vw, 64px); align-items: end; }
+.hero h1 { font: 400 clamp(2.4rem, 6vw, 4.6rem)/1.02 var(--font-display); margin: 0 0 20px; text-wrap: balance; }
+.hero p { margin: 0; max-width: 46ch; opacity: 0.92; }
+.now { border-left: 1px solid color-mix(in srgb, var(--on-hero) 45%, transparent); padding-left: 24px; }
+.now small { display: block; text-transform: uppercase; letter-spacing: 0.1em; font-size: 0.75rem; opacity: 0.85; }
+.now strong { display: block; font: 400 clamp(2.4rem, 5vw, 3.6rem)/1.05 var(--font-display); margin: 6px 0; }
+.now span { font-size: 0.9rem; opacity: 0.9; }
+.explore { display: inline-flex; gap: 8px; margin-top: 22px; font-weight: 500; text-decoration: none; }
+.explore:hover { text-decoration: underline; text-underline-offset: 4px; }
+
+/* Headlines */
+h2 { font: 400 clamp(2rem, 4.2vw, 3.2rem)/1.05 var(--font-display); color: var(--ink); margin: 0 0 16px; text-wrap: balance; }
+h2 em { font-style: normal; color: var(--accent); display: block; }
+.lede { color: var(--muted); max-width: 60ch; margin: 0 0 40px; }
+
+/* Stats */
+.stats { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 32px; }
+.stat { border-left: 1px solid var(--rule); padding-left: 22px; }
+.stat b { display: block; font: 400 clamp(2.6rem, 5vw, 4rem)/1 var(--font-display); color: var(--ink); font-variant-numeric: tabular-nums; }
+.stat p { margin: 14px 0 0; color: var(--muted); font-size: 0.95rem; }
+.stat small { display: block; margin-top: 8px; color: var(--muted); font-size: 0.75rem; opacity: 0.85; }
+
+/* Floor + table status */
+.floor { display: grid; grid-template-columns: minmax(0, 1.55fr) minmax(0, 1fr); gap: 40px; align-items: start; }
+.viewbar { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 14px; }
+.seg { display: inline-flex; border: 1px solid var(--rule); border-radius: 999px; padding: 3px; }
+.seg button { font: 500 0.85rem var(--font-body); border: 0; background: none; color: var(--muted); padding: 7px 16px; border-radius: 999px; cursor: pointer; }
+.seg button[aria-pressed="true"] { background: var(--accent); color: var(--on-hero); }
+.viewbar small { color: var(--muted); font-size: 0.8rem; }
+.canvas { background: var(--surface); border: 1px solid var(--rule); }
+.canvas svg { display: block; width: 100%; height: auto; }
+.legend { display: flex; gap: 18px; flex-wrap: wrap; margin-top: 12px; font-size: 0.8rem; color: var(--muted); }
+.legend span { display: inline-flex; align-items: center; gap: 6px; }
+.sw { width: 12px; height: 12px; border-radius: 50%; border: 1.5px solid var(--accent); }
+.sw.taken { background: var(--accent); }
+
+.tlist { list-style: none; margin: 0; padding: 0; border-top: 1px solid var(--rule); }
+.tlist li { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 4px 16px; align-items: baseline; padding: 14px 0; border-bottom: 1px solid var(--rule); }
+.tlist .num { font: 400 1.6rem/1 var(--font-display); color: var(--ink); width: 2.2ch; }
+.tlist .what { font-size: 0.9rem; color: var(--muted); min-width: 0; }
+.tlist .what b { color: var(--text); font-weight: 500; }
+.chip { font-size: 0.72rem; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; padding: 3px 9px; border-radius: 999px; white-space: nowrap; }
+.chip.free { border: 1px solid var(--rule); color: var(--muted); }
+.chip.taken { background: var(--accent); color: var(--on-hero); }
+.tag { display: inline-block; margin-left: 6px; font-size: 0.68rem; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--accent); }
+
+/* Charts */
+.charts { display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr); gap: 40px; }
+.chart h3 { font: 500 1.35rem/1.2 var(--font-display); color: var(--ink); margin: 0 0 4px; }
+.chart p { margin: 0 0 14px; color: var(--muted); font-size: 0.85rem; }
+.chart svg { display: block; width: 100%; height: auto; }
+.axis { font: 400 11px var(--font-body); fill: var(--muted); }
+
+/* Log */
+.log { list-style: none; margin: 0; padding: 0; }
+.log li { padding: 22px 0; border-bottom: 1px solid var(--rule); display: grid; gap: 6px; }
+.meta { display: flex; gap: 12px; align-items: center; font-size: 0.85rem; color: var(--muted); font-variant-numeric: tabular-nums; }
+.meta b { color: var(--text); font-weight: 500; }
+.meta i { width: 1px; height: 14px; background: var(--muted); opacity: 0.5; }
+.log h4 { font: 400 1.5rem/1.2 var(--font-display); color: var(--ink); margin: 0; }
+.log h4 span { color: var(--accent); }
+.log h4.full span { color: var(--full); }
+.log h4.quiet { color: var(--muted); font-size: 1.2rem; }
+.empty { color: var(--muted); padding: 22px 0; }
+
+footer .wrap { padding-block: 32px; color: var(--muted); font-size: 0.8rem; display: flex; justify-content: space-between; gap: 16px; flex-wrap: wrap; border-top: 1px solid var(--rule); }
+
+@media (max-width: 900px) {
+  .hero, .floor, .charts { grid-template-columns: minmax(0, 1fr); }
+  .stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  section .wrap { padding-block: 48px; }
+  nav a { display: none; }
+}
+@media (prefers-reduced-motion: reduce) { .pill.live i { animation: none; } }
+</style>
+
+<header>
+  <div class="wrap">
+    <a class="brand" href="#top" aria-label="Smart Table Guide home">
+      <svg viewBox="0 0 34 22" aria-hidden="true">
+        <circle cx="7" cy="11" r="6" fill="none" stroke="currentColor" stroke-width="2"/>
+        <path d="M13 9h11V5l9 6-9 6v-4H13z" fill="var(--accent)"/>
+      </svg>
+      <span>Smart Table Guide</span>
+    </a>
+    <nav aria-label="Sections">
+      <a href="#floor">Floor</a>
+      <a href="#stats">Today</a>
+      <a href="#log">Seating log</a>
+      <span class="pill" id="mode"><i></i><span>Connecting</span></span>
+    </nav>
+  </div>
+</header>
+
+<main id="top">
+  <div class="wrap">
+    <div class="hero">
+      <div>
+        <h1>Every Party,<br>The Right Table</h1>
+        <p>Guests hold up their party size at the kiosk. A camera counts the fingers, the Nano picks the best free table, and the arrow turns to point the way.</p>
+        <a class="explore" href="#floor">Explore the floor <span aria-hidden="true">→</span></a>
+      </div>
+      <div class="now" aria-live="polite">
+        <small>Arrow is pointing to</small>
+        <strong id="nowTable">Home</strong>
+        <span id="nowWhat">Waiting for the first party</span>
+      </div>
+    </div>
+  </div>
+
+  <section id="stats">
+    <div class="wrap">
+      <div class="stats" id="statRow"></div>
+    </div>
+  </section>
+
+  <section id="floor" class="band-alt">
+    <div class="wrap">
+      <h2>The Floor, <em>From the Kiosk</em></h2>
+      <p class="lede">What a guest sees standing at the machine. Taken tables fill in orange, and the arrow swings to the table the guide just assigned.</p>
+      <div class="floor">
+        <div>
+          <div class="viewbar">
+            <div class="seg" role="group" aria-label="Layout view">
+              <button type="button" id="vPlan" aria-pressed="true">Floor plan</button>
+              <button type="button" id="vStand" aria-pressed="false">Standing view</button>
+            </div>
+            <small>Servo angle 0° is on the guest's <span id="zeroSide">right</span></small>
+          </div>
+          <div class="canvas"><svg id="view" viewBox="0 0 600 420" role="img" aria-label="Restaurant layout as seen from the kiosk"></svg></div>
+          <div class="legend">
+            <span><i class="sw"></i> Free</span>
+            <span><i class="sw taken"></i> Taken</span>
+            <span><i class="sw" style="border-style:dashed"></i> Accessible table</span>
+          </div>
+        </div>
+        <div>
+          <ul class="tlist" id="tableList"></ul>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <div class="wrap">
+      <h2>How the <em>Room Filled</em></h2>
+      <p class="lede" id="chartLede">Tables in use through the service, and the party sizes the camera counted.</p>
+      <div class="charts">
+        <div class="chart"><h3>Tables in use</h3><p>Out of 6, after every seating and every table freed</p><svg id="occ" viewBox="0 0 640 230" role="img" aria-label="Tables in use over time"></svg></div>
+        <div class="chart"><h3>Party sizes</h3><p>Every party that held up a number. <span style="color:var(--full)">Red</span> shows those turned away because nothing fit.</p><svg id="sizes" viewBox="0 0 420 230" role="img" aria-label="Party size counts"></svg></div>
+      </div>
+    </div>
+  </section>
+
+  <section id="log" class="band-alt">
+    <div class="wrap">
+      <h2>Seating <em>Log</em></h2>
+      <p class="lede">Newest first. Each entry is one answer from the Nano.</p>
+      <ul class="log" id="logList"></ul>
+    </div>
+  </section>
+</main>
+
+<footer>
+  <div class="wrap">
+    <span>Smart Table Guide · UT Makeathon 2026</span>
+    <span id="footNote"></span>
+  </div>
+</footer>
+
+<script>
+// ---- Restaurant layout. Seats, accessibility, adjacency and servo angles mirror tables[] in
+// table_finder.ino. `dist` (metres from the kiosk) is illustrative: set it to the real room.
+// ponytail: duplicated from the firmware; keep both in step if the tables change.
+const TABLES = [
+  { id: 1, seats: 6, accessible: true,  angle: 180, adj: [],     dist: 3.4 },
+  { id: 2, seats: 4, accessible: true,  angle: 135, adj: [],     dist: 4.6 },
+  { id: 3, seats: 6, accessible: false, angle: 90,  adj: [4],    dist: 5.6 },
+  { id: 4, seats: 2, accessible: false, angle: 60,  adj: [3, 5], dist: 4.6 },
+  { id: 5, seats: 2, accessible: false, angle: 30,  adj: [4, 6], dist: 4.2 },
+  { id: 6, seats: 4, accessible: false, angle: 0,   adj: [5],    dist: 3.4 },
+];
+const ZERO_ON_RIGHT = true;   // flip if servo 0° points to the guest's left
+const byId = Object.fromEntries(TABLES.map(t => [t.id, t]));
+const $ = id => document.getElementById(id);
+const svgNS = "http://www.w3.org/2000/svg";
+
+// ---- Seating rules, a port of FindTable/Seat in the firmware. Only used to build the sample day.
+function findTable(size, access, used) {   // access: "any" | "acc" | "non"
+  const ok = t => !used.has(t.id) && (access === "any" || t.accessible === (access === "acc"));
+  let best = null, bestExtra = -1;
+  for (const t of TABLES) {
+    if (!ok(t)) continue;
+    let extra = t.seats - size;
+    if (extra >= 0 && (bestExtra < 0 || extra < bestExtra || (extra === bestExtra && best.length === 2))) { best = [t.id]; bestExtra = extra; }
+    for (const a of t.adj) {
+      const u = byId[a];
+      if (!ok(u)) continue;
+      extra = t.seats + u.seats - size;
+      if (extra >= 0 && (bestExtra < 0 || extra < bestExtra)) { best = [t.id, u.id]; bestExtra = extra; }
+    }
+  }
+  return best;
+}
+function seatRule(size, accessible, used) {
+  return findTable(size, accessible ? "acc" : "non", used) || (accessible ? null : findTable(size, "any", used));
+}
+
+// ---- Sample day: seeded arrivals run through the real rules, 11:00 to 20:15.
+function sampleDay() {
+  let s = 20261115;
+  const rnd = () => { s = (s + 0x6D2B79F5) | 0; let t = Math.imul(s ^ (s >>> 15), 1 | s); t ^= t + Math.imul(t ^ (t >>> 7), 61 | t); return ((t ^ (t >>> 14)) >>> 0) / 4294967296; };
+  const pick = w => { let r = rnd() * w.reduce((a, b) => a + b[1], 0); for (const [v, n] of w) if ((r -= n) < 0) return v; return w[0][0]; };
+  const sizes = [[1, 5], [2, 30], [3, 12], [4, 24], [5, 8], [6, 10], [7, 4], [8, 5], [9, 1], [10, 1]];
+  const day = new Date(); day.setHours(11, 0, 0, 0);
+  const at = min => day.getTime() + min * 60000;
+  const events = [], used = new Set(), leaving = [];
+  let min = 0;
+  while (min < 555) {
+    const busy = (min > 60 && min < 150) || (min > 400 && min < 510);
+    min += Math.round((busy ? 3 : 9) + rnd() * (busy ? 6 : 14));
+    leaving.sort((a, b) => a.at - b.at);
+    while (leaving.length && leaving[0].at <= min) {
+      const l = leaving.shift();
+      l.tables.forEach(id => used.delete(id));
+      events.push({ t: at(l.at), kind: "free", tables: l.tables });
+    }
+    const party = pick(sizes), accessible = rnd() < 0.12;
+    const tables = seatRule(party, accessible, used);
+    if (tables) {
+      tables.forEach(id => used.add(id));
+      leaving.push({ at: min + 40 + Math.round(rnd() * 50), tables });
+      events.push({ t: at(min), kind: "seat", party, accessible, tables });
+    } else {
+      events.push({ t: at(min), kind: "full", party, accessible });
+    }
+  }
+  return { events, now: at(min + 4) };
+}
+
+// ---- Replay events into table state and an occupancy series.
+function replay(events) {
+  const state = Object.fromEntries(TABLES.map(t => [t.id, null]));
+  const series = [];
+  let last = null;
+  for (const e of events) {
+    if (e.kind === "seat") { e.tables.forEach(id => state[id] = { party: e.party, accessible: e.accessible, since: e.t, with: e.tables }); last = e; }
+    if (e.kind === "free") e.tables.forEach(id => state[id] = null);   // like F<t>: only the named tables
+    if (e.kind === "reset") TABLES.forEach(t => state[t.id] = null);
+    series.push([e.t, TABLES.filter(t => state[t.id]).length]);
+  }
+  return { state, series, last };
+}
+
+// ---- Rendering helpers
+const el = (tag, attrs = {}, parent) => { const n = document.createElementNS(svgNS, tag); for (const k in attrs) n.setAttribute(k, attrs[k]); if (parent) parent.appendChild(n); return n; };
+const clock = t => new Date(t).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+const mins = ms => { const m = Math.max(0, Math.round(ms / 60000)); return m < 60 ? `${m} min` : `${Math.floor(m / 60)} h ${m % 60} min`; };
+const screenAngle = a => ZERO_ON_RIGHT ? a : 180 - a;   // 0 = guest's right, 90 = ahead, 180 = left
+const tablesLabel = ids => ids.length === 1 ? `Table ${ids[0]}` : `Tables ${ids.join(" + ")}`;
+const pointAngle = ids => ids.reduce((a, id) => a + byId[id].angle, 0) / ids.length;
+const reduceMotion = matchMedia("(prefers-reduced-motion: reduce)").matches;
+const KIOSK = [300, 350];   // kiosk position in the floor plan's SVG units
+
+let view = "plan";
+try { view = localStorage.getItem("stg-view") || "plan"; } catch (e) {}
+let needle = { angle: 0, target: 0 };   // arrow angle, animated
+let data = { events: [], now: Date.now() }, live = false;
+
+function drawPlan(svg, st) {
+  svg.setAttribute("viewBox", "0 0 600 420");
+  const kx = KIOSK[0], ky = KIOSK[1], k = 50;
+  const pos = t => { const a = screenAngle(t.angle) * Math.PI / 180; return [kx + Math.cos(a) * t.dist * k, ky - Math.sin(a) * t.dist * k]; };
+  // Distance rings and the servo protractor around the kiosk
+  for (let m = 1; m <= 6; m++) el("path", { d: `M${kx - m * k},${ky} A${m * k},${m * k} 0 0 1 ${kx + m * k},${ky}`, fill: "none", stroke: "var(--rule)", "stroke-width": 1 }, svg);
+  el("text", { x: kx + 2 * k + 4, y: ky - 4, class: "axis" }, svg).textContent = "2 m";
+  el("text", { x: kx + 4 * k + 4, y: ky - 4, class: "axis" }, svg).textContent = "4 m";
+  for (let a = 0; a <= 180; a += 30) {
+    const r = screenAngle(a) * Math.PI / 180;
+    el("line", { x1: kx + Math.cos(r) * 30, y1: ky - Math.sin(r) * 30, x2: kx + Math.cos(r) * 38, y2: ky - Math.sin(r) * 38, stroke: "var(--muted)", "stroke-width": 1 }, svg);
+    el("text", { x: kx + Math.cos(r) * 50, y: ky - Math.sin(r) * 50 + 4, "text-anchor": "middle", class: "axis" }, svg).textContent = a + "°";
+  }
+  // Pairs seated together
+  const drawn = new Set();
+  for (const t of TABLES) {
+    const s = st[t.id];
+    if (s && s.with.length === 2 && !drawn.has(s.with.join())) {
+      drawn.add(s.with.join());
+      const [a, b] = s.with.map(id => pos(byId[id]));
+      el("line", { x1: a[0], y1: a[1], x2: b[0], y2: b[1], stroke: "var(--accent-soft)", "stroke-width": 16, "stroke-linecap": "round" }, svg);
+    }
+  }
+  for (const t of TABLES) {
+    const [x, y] = pos(t), r = 12 + t.seats * 2.6, s = st[t.id];
+    for (let i = 0; i < t.seats; i++) {
+      const a = (i / t.seats) * Math.PI * 2 - Math.PI / 2;
+      el("circle", { cx: x + Math.cos(a) * (r + 8), cy: y + Math.sin(a) * (r + 8), r: 4.5, fill: "var(--surface)", stroke: "var(--muted)", "stroke-width": 1 }, svg);
+    }
+    el("circle", { cx: x, cy: y, r, fill: s ? "var(--accent)" : "var(--surface)", stroke: "var(--accent)", "stroke-width": 1.8, "stroke-dasharray": t.accessible ? "4 3" : "none" }, svg);
+    const label = el("text", { x, y: y + 6, "text-anchor": "middle", "font-family": "var(--font-display)", "font-size": 18, fill: s ? "var(--on-hero)" : "var(--ink)" }, svg);
+    label.textContent = t.id;
+    if (s) el("text", { x, y: y + r + 24, "text-anchor": "middle", class: "axis" }, svg).textContent = `party of ${s.party}`;
+  }
+  // The arrow: the laser-cut hub and pointer, seen from above
+  const g = el("g", { id: "needle" }, svg);
+  el("circle", { cx: kx, cy: ky, r: 14, fill: "var(--accent)" }, g);
+  el("path", { d: `M${kx + 10},${ky - 4} h46 v-7 l16 11 -16 11 v-7 h-46z`, fill: "var(--accent)" }, g);
+  el("circle", { cx: kx, cy: ky, r: 3, fill: "var(--surface)" }, g);
+  el("text", { x: kx, y: ky + 32, "text-anchor": "middle", class: "axis", "font-weight": 600, "letter-spacing": "0.08em" }, svg).textContent = "YOU ARE HERE · KIOSK";
+}
+
+function drawStanding(svg, st, last) {
+  svg.setAttribute("viewBox", "0 0 600 330");
+  const hz = 100, cx = 300;
+  const px = t => 70 + (180 - screenAngle(t.angle)) / 180 * 460;
+  const py = t => hz + 560 / (t.dist + 0.6);
+  el("rect", { x: 0, y: 0, width: 600, height: hz, fill: "var(--surface)" }, svg);
+  el("rect", { x: 0, y: hz, width: 600, height: 330 - hz, fill: "var(--bg-alt)" }, svg);
+  for (let i = -6; i <= 6; i++) el("line", { x1: cx, y1: hz, x2: cx + i * 120, y2: 330, stroke: "var(--rule)", "stroke-width": 1 }, svg);
+  for (const d of [3, 4.5, 6, 8]) el("line", { x1: 0, y1: hz + 560 / (d + 0.6), x2: 600, y2: hz + 560 / (d + 0.6), stroke: "var(--rule)", "stroke-width": 1 }, svg);
+  el("line", { x1: 0, y1: hz, x2: 600, y2: hz, stroke: "var(--muted)", "stroke-width": 1 }, svg);
+  [["LEFT", 180], ["AHEAD", 90], ["RIGHT", 0]].forEach(([w, a]) =>
+    el("text", { x: 70 + (180 - a) / 180 * 460, y: 26, "text-anchor": "middle", class: "axis", "font-weight": 600, "letter-spacing": "0.1em" }, svg).textContent = w);
+  // Beam from the guest to the assigned table
+  const target = last && last.tables.map(id => byId[id]);
+  if (target) {
+    const tx = target.reduce((a, t) => a + px(t), 0) / target.length, ty = Math.min(...target.map(py));
+    el("path", { d: `M${cx - 26},330 L${tx - 18},${ty} L${tx + 18},${ty} L${cx + 26},330 Z`, fill: "var(--accent)", opacity: 0.16 }, svg);
+    el("path", { d: `M${tx - 9},${ty - 70} l9,11 9,-11`, fill: "none", stroke: "var(--accent)", "stroke-width": 3 }, svg);
+    el("text", { x: tx, y: ty - 78, "text-anchor": "middle", class: "axis", "font-weight": 600, fill: "var(--accent)" }, svg).textContent = "YOUR TABLE";
+  }
+  // Far tables first so near ones overlap them
+  for (const t of [...TABLES].sort((a, b) => b.dist - a.dist)) {
+    const x = px(t), y = py(t), s = 4.2 / (t.dist + 0.6), st_ = st[t.id];
+    const rx = (16 + t.seats * 4) * s, ry = rx * 0.3, h = 30 * s;
+    el("ellipse", { cx: x, cy: y + 2, rx: rx * 0.8, ry: ry * 0.6, fill: "var(--rule)" }, svg);
+    el("rect", { x: x - 2.5 * s, y: y - h, width: 5 * s, height: h, fill: "var(--muted)" }, svg);
+    el("ellipse", { cx: x, cy: y - h, rx, ry, fill: st_ ? "var(--accent)" : "var(--surface)", stroke: "var(--accent)", "stroke-width": 1.6, "stroke-dasharray": t.accessible ? "4 3" : "none" }, svg);
+    const lbl = el("text", { x, y: y - h - ry - 8, "text-anchor": "middle", "font-family": "var(--font-display)", "font-size": 13 + 6 * s, fill: "var(--ink)" }, svg);
+    lbl.textContent = t.id;
+  }
+  el("text", { x: cx, y: 320, "text-anchor": "middle", class: "axis", "font-weight": 600, "letter-spacing": "0.08em" }, svg).textContent = "YOU ARE HERE · KIOSK";
+}
+
+function setNeedle() {
+  const n = $("needle");
+  if (n) n.setAttribute("transform", `rotate(${-screenAngle(needle.angle)} ${KIOSK[0]} ${KIOSK[1]})`);
+}
+function animateNeedle() {
+  const step = () => {
+    const d = needle.target - needle.angle;
+    needle.angle = Math.abs(d) < 0.5 || reduceMotion ? needle.target : needle.angle + d * 0.12;
+    setNeedle();
+    if (needle.angle !== needle.target) requestAnimationFrame(step);
+  };
+  requestAnimationFrame(step);
+}
+
+function drawOcc(svg, series, t0, t1) {
+  svg.replaceChildren();
+  const L = 34, R = 628, T = 12, B = 200, span = Math.max(t1 - t0, 10 * 60000);
+  const x = t => L + (t - t0) / span * (R - L), y = v => B - v / 6 * (B - T);
+  for (const v of [0, 2, 4, 6]) {
+    el("line", { x1: L, y1: y(v), x2: R, y2: y(v), stroke: "var(--rule)", "stroke-width": 1 }, svg);
+    el("text", { x: L - 8, y: y(v) + 4, "text-anchor": "end", class: "axis" }, svg).textContent = v;
+  }
+  const hour = 3600000, stepMs = span > 6 * hour ? 2 * hour : span > 2 * hour ? hour : 15 * 60000;
+  for (let t = Math.ceil(t0 / stepMs) * stepMs; t <= t0 + span; t += stepMs)
+    el("text", { x: x(t), y: B + 20, "text-anchor": "middle", class: "axis" }, svg).textContent = clock(t);
+  let d = `M${x(t0)},${y(0)}`, prev = 0;
+  for (const [t, v] of series) { d += ` H${x(t)} V${y(v)}`; prev = v; }
+  d += ` H${x(t1)}`;
+  el("path", { d: d + ` V${y(0)} Z`, fill: "var(--accent)", opacity: 0.14 }, svg);
+  el("path", { d, fill: "none", stroke: "var(--accent)", "stroke-width": 2 }, svg);
+  el("circle", { cx: x(t1), cy: y(prev), r: 4.5, fill: "var(--accent)" }, svg);
+}
+
+function drawSizes(svg, events) {
+  svg.replaceChildren();
+  const counts = Array(11).fill(0), turned = Array(11).fill(0);
+  for (const e of events) if (e.kind === "seat" || e.kind === "full") { counts[e.party]++; if (e.kind === "full") turned[e.party]++; }
+  const max = Math.max(4, ...counts), L = 28, R = 412, T = 12, B = 200, bw = (R - L) / 10;
+  for (const v of [0, Math.round(max / 2), max]) {
+    const yy = B - v / max * (B - T);
+    el("line", { x1: L, y1: yy, x2: R, y2: yy, stroke: "var(--rule)", "stroke-width": 1 }, svg);
+    el("text", { x: L - 6, y: yy + 4, "text-anchor": "end", class: "axis" }, svg).textContent = v;
+  }
+  for (let n = 1; n <= 10; n++) {
+    const x = L + (n - 1) * bw + 6, w = bw - 12, h = counts[n] / max * (B - T), ht = turned[n] / max * (B - T);
+    el("rect", { x, y: B - h, width: w, height: h, fill: "var(--accent)" }, svg);
+    if (ht) el("rect", { x, y: B - h, width: w, height: ht, fill: "var(--full)" }, svg);
+    el("text", { x: x + w / 2, y: B + 20, "text-anchor": "middle", class: "axis" }, svg).textContent = n;
+  }
+}
+
+function render() {
+  const { events, now } = data;
+  const { state, series, last } = replay(events);
+  const seated = events.filter(e => e.kind === "seat"), full = events.filter(e => e.kind === "full");
+  const inUse = TABLES.filter(t => state[t.id]).length;
+  const guests = seated.reduce((a, e) => a + e.party, 0);
+  const avg = seated.length ? (guests / seated.length).toFixed(1) : "0";
+
+  // Mode pill + notes
+  const pill = $("mode");
+  pill.className = "pill" + (live === true ? " live" : live === "lost" ? " lost" : "");
+  pill.lastElementChild.textContent = live === true ? "Live from the kiosk" : live === "lost" ? "Kiosk disconnected" : "Sample day";
+  $("footNote").textContent = live ? "Live: events from finger_count.py on this laptop" : "Sample data: a simulated service run through the real seating rules";
+  $("zeroSide").textContent = ZERO_ON_RIGHT ? "right" : "left";
+
+  // Hero: where the arrow points now
+  if (last) {
+    $("nowTable").textContent = tablesLabel(last.tables);
+    $("nowWhat").textContent = `Party of ${last.party}${last.accessible ? ", accessible" : ""} · ${clock(last.t)} · servo ${Math.round(pointAngle(last.tables))}°`;
+    needle.target = pointAngle(last.tables);
+  } else {
+    $("nowTable").textContent = "Home";
+    $("nowWhat").textContent = "Waiting for the first party · servo 0°";
+    needle.target = 0;
+  }
+
+  // Stats
+  const stat = (b, p, small) => `<div class="stat"><b>${b}</b><p>${p}</p>${small ? `<small>${small}</small>` : ""}</div>`;
+  $("statRow").innerHTML =
+    stat(seated.length, "Parties seated", live ? "Since the kiosk started" : "Sample service, 11:00 onward") +
+    stat(guests, "Guests seated", `${avg} guests per party on average`) +
+    stat(`${inUse}<span style="font-size:.45em;color:var(--muted)"> / ${TABLES.length}</span>`, "Tables in use right now") +
+    stat(full.length, "Parties turned away", "The OLED showed “Full - please wait”");
+
+  // Floor
+  const svg = $("view");
+  svg.replaceChildren();
+  if (view === "plan") { drawPlan(svg, state); setNeedle(); animateNeedle(); }
+  else drawStanding(svg, state, last);
+  $("vPlan").setAttribute("aria-pressed", view === "plan");
+  $("vStand").setAttribute("aria-pressed", view === "stand");
+
+  // Table list
+  $("tableList").innerHTML = TABLES.map(t => {
+    const s = state[t.id];
+    const next = t.adj.length ? ` · joins ${t.adj.join(" & ")}` : "";
+    const what = s ? `<b>Party of ${s.party}</b>${s.with.length === 2 ? ` with table ${s.with.find(x => x !== t.id)}` : ""} · ${mins(now - s.since)}` : `${t.seats} seats${next}`;
+    return `<li><span class="num">${t.id}</span><span class="what">${what}${t.accessible ? '<span class="tag">Accessible</span>' : ""}</span>
+      <span class="chip ${s ? "taken" : "free"}">${s ? "Taken" : "Free"}</span></li>`;
+  }).join("");
+
+  // Charts
+  const t0 = live ? (events[0]?.t ?? now) : new Date(now).setHours(11, 0, 0, 0);
+  drawOcc($("occ"), series, t0, now);
+  drawSizes($("sizes"), events);
+
+  // Log
+  const items = events.slice(-12).reverse().map(e => {
+    const who = e.kind === "seat" || e.kind === "full" ? (e.accessible ? "Accessible party" : "Walk-in party") : "Staff";
+    let title;
+    if (e.kind === "seat") title = `<h4>Party of ${e.party} → <span>${tablesLabel(e.tables)}</span></h4>`;
+    else if (e.kind === "full") title = `<h4 class="full">Party of ${e.party} · <span>Full, please wait</span></h4>`;
+    else if (e.kind === "free") title = `<h4 class="quiet">${tablesLabel(e.tables)} freed</h4>`;
+    else title = `<h4 class="quiet">All tables reset</h4>`;
+    return `<li><div class="meta"><b>${clock(e.t)}</b><i></i><span>${who}</span></div>${title}</li>`;
+  });
+  $("logList").innerHTML = items.join("") || `<li class="empty">No parties yet. Hold up a number at the kiosk to seat the first one.</li>`;
+}
+
+$("vPlan").onclick = () => { view = "plan"; try { localStorage.setItem("stg-view", view); } catch (e) {} render(); };
+$("vStand").onclick = () => { view = "stand"; try { localStorage.setItem("stg-view", view); } catch (e) {} render(); };
+
+// ---- Data: live events from finger_count.py when served by it, otherwise the sample day.
+let lastCount = -1;
+async function poll() {
+  try {
+    const r = await fetch("events", { cache: "no-store" });
+    if (!r.ok) throw new Error(r.status);
+    const events = await r.json();
+    if (!Array.isArray(events)) throw new Error("bad data");
+    const changed = live !== true || events.length !== lastCount;
+    live = true; data = { events, now: Date.now() }; lastCount = events.length;
+    if (changed) render(); else { data.now = Date.now(); }
+    setTimeout(poll, 1000);
+  } catch (e) {
+    if (live === true || live === "lost") { live = "lost"; render(); setTimeout(poll, 2000); return; }
+    live = false; data = sampleDay(); render();
+  }
+}
+render();
+poll();
+// Refresh "seated for" times once a minute in live mode.
+setInterval(() => { if (live === true) { data.now = Date.now(); render(); } }, 60000);
+</script>
