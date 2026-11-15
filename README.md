@@ -29,4 +29,5 @@ Tables are set in `tables[]` in `table_finder.ino` (id, chairs, adjacent1, adjac
 
 Serial commands (115200 baud, Newline), also usable from the Serial Monitor:
 `P2` seats a party of 2, `F1` frees table 1, `R` frees all tables and returns the servo to 0°.
+`O` lists which tables are in use, `M3` marks table 3 in use.
 Close the Serial Monitor before running the Python script, since only one program can use the port.

@@ -87,6 +87,7 @@ void setup() {
 
 // Commands from finger_count.py, one per line:
 //   P<n> seat a group of n   R free all tables + servo to 0   F<t> free table t
+//   O list which tables are in use   M<t> mark table t in use
 //   (C<n> = live count, ignored)
 void loop() {
     if (!Serial.available()) return;
@@ -106,5 +107,26 @@ void loop() {
         }
         Serial.print("Freed ");
         Serial.println(id);
+    } else if (cmd == 'O') {
+        for (int i = 0; i < NUM_TABLES; ++i) {
+            Serial.print("Is table ");
+            Serial.print(tables[i].Id());
+            Serial.print(" in use? ");
+            Serial.println(tables[i].InUse());
+        }
+    } else if (cmd == 'M') {
+        int id = Serial.parseInt();
+        table* t = nullptr;
+        for (int i = 0; i < NUM_TABLES; ++i) {
+            if (tables[i].Id() == id) t = &tables[i];
+        }
+        if (t) {
+            t->Direct();
+            Serial.print("Table ");
+            Serial.print(id);
+            Serial.println(" is now in use");
+        } else {
+            Serial.println("No table");
+        }
     }
 }
