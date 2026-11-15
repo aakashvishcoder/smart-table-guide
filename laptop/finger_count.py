@@ -82,28 +82,42 @@ DASHBOARD_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "dashb
 class Dashboard:
     """Turns Arduino replies into events and serves them with dashboard.html on localhost."""
 
-    def __init__(self):
-        self.events = []
+    def __init__(self, folder=os.path.dirname(os.path.abspath(__file__))):
+        # Today's events survive restarts: they're kept in events-YYYY-MM-DD.json next to this script.
+        self.path = os.path.join(folder, time.strftime("events-%Y-%m-%d.json"))
+        try:
+            with open(self.path) as f:
+                self.events = json.load(f)
+        except (OSError, ValueError):
+            self.events = []
         self.pending = deque()   # (party, accessible) waiting for the Arduino's answer
+        if self.events:
+            self.add(kind="reset")   # the Nano restarted with every table free
+
+    def add(self, **event):
+        self.events.append({"t": int(time.time() * 1000), **event})
+        try:
+            with open(self.path, "w") as f:
+                json.dump(self.events, f)
+        except OSError as e:
+            print(f"Couldn't save dashboard history: {e}")
 
     def sent(self, msg):
         if msg[0] in "PA":
             self.pending.append((int(msg[1:]), msg[0] == "A"))
 
     def reply(self, line):
-        t = int(time.time() * 1000)
         m = SEATED_RE.match(line)
         if m and self.pending:
             party, acc = self.pending.popleft()
-            tables = [int(g) for g in m.groups() if g]
-            self.events.append({"t": t, "kind": "seat", "party": party, "accessible": acc, "tables": tables})
+            self.add(kind="seat", party=party, accessible=acc, tables=[int(g) for g in m.groups() if g])
         elif line == "No table" and self.pending:
             party, acc = self.pending.popleft()
-            self.events.append({"t": t, "kind": "full", "party": party, "accessible": acc})
+            self.add(kind="full", party=party, accessible=acc)
         elif line.startswith("Freed "):
-            self.events.append({"t": t, "kind": "free", "tables": [int(line.split()[1])]})
+            self.add(kind="free", tables=[int(line.split()[1])])
         elif line == "All free":
-            self.events.append({"t": t, "kind": "reset"})
+            self.add(kind="reset")
 
     def serve(self):
         dash = self

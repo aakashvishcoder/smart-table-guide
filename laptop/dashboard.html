@@ -139,6 +139,16 @@ footer .wrap { padding-block: 32px; color: var(--muted); font-size: 0.8rem; disp
   section .wrap { padding-block: 48px; }
   nav a { display: none; }
 }
+/* Motion: page fades in on load, sections below the fold rise in as they scroll into view.
+   .reveal is only added by script, so without it everything is simply visible. */
+@media (prefers-reduced-motion: no-preference) {
+  html { scroll-behavior: smooth; }
+  body { animation: pagein 0.7s ease-out both; }
+  .reveal { opacity: 0; transform: translateY(28px); transition: opacity 0.7s ease-out, transform 0.7s ease-out; }
+  .reveal.in { opacity: 1; transform: none; }
+}
+@keyframes pagein { from { opacity: 0; } to { opacity: 1; } }
+section { scroll-margin-top: 12px; }
 @media (prefers-reduced-motion: reduce) { .pill.live i { animation: none; } }
 </style>
 
@@ -274,7 +284,8 @@ function seatRule(size, accessible, used) {
   return findTable(size, accessible ? "acc" : "non", used) || (accessible ? null : findTable(size, "any", used));
 }
 
-// ---- Sample day: seeded arrivals run through the real rules, 11:00 to 20:15.
+// ---- Sample day: seeded arrivals run through the real rules, from 11:00 up to the current
+// time (or the whole service, to 20:15, outside 11:30-20:15).
 function sampleDay() {
   let s = 20261115;
   const rnd = () => { s = (s + 0x6D2B79F5) | 0; let t = Math.imul(s ^ (s >>> 15), 1 | s); t ^= t + Math.imul(t ^ (t >>> 7), 61 | t); return ((t ^ (t >>> 14)) >>> 0) / 4294967296; };
@@ -283,10 +294,13 @@ function sampleDay() {
   const day = new Date(); day.setHours(11, 0, 0, 0);
   const at = min => day.getTime() + min * 60000;
   const events = [], used = new Set(), leaving = [];
+  const sinceOpen = Math.floor((Date.now() - day.getTime()) / 60000);
+  const end = sinceOpen >= 30 && sinceOpen < 555 ? sinceOpen : 555;
   let min = 0;
-  while (min < 555) {
+  while (true) {
     const busy = (min > 60 && min < 150) || (min > 400 && min < 510);
     min += Math.round((busy ? 3 : 9) + rnd() * (busy ? 6 : 14));
+    if (min > end) break;
     leaving.sort((a, b) => a.at - b.at);
     while (leaving.length && leaving[0].at <= min) {
       const l = leaving.shift();
@@ -303,7 +317,9 @@ function sampleDay() {
       events.push({ t: at(min), kind: "full", party, accessible });
     }
   }
-  return { events, now: at(min + 4) };
+  leaving.sort((a, b) => a.at - b.at);
+  for (const l of leaving) if (l.at <= end) events.push({ t: at(l.at), kind: "free", tables: l.tables });
+  return { events, now: end === 555 ? at(end) : Date.now() };
 }
 
 // ---- Replay events into table state and an occupancy series.
@@ -552,6 +568,16 @@ async function poll() {
 }
 render();
 poll();
+
+// Sections below the first screen rise in when scrolled to. Ones already in view stay put.
+if (!reduceMotion && "IntersectionObserver" in window) {
+  const io = new IntersectionObserver(entries => entries.forEach(e => {
+    if (e.isIntersecting) { e.target.classList.add("in"); io.unobserve(e.target); }
+  }), { threshold: 0.12 });
+  document.querySelectorAll("main section").forEach(s => {
+    if (s.getBoundingClientRect().top > innerHeight) { s.classList.add("reveal"); io.observe(s); }
+  });
+}
 // Refresh "seated for" times once a minute in live mode.
 setInterval(() => { if (live === true) { data.now = Date.now(); render(); } }, 60000);
 </script>
