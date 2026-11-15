@@ -75,6 +75,9 @@ nav a:hover { color: var(--accent); }
 .now span { font-size: 0.9rem; opacity: 0.9; }
 .explore { display: inline-flex; gap: 8px; margin-top: 22px; font-weight: 500; text-decoration: none; }
 .explore:hover { text-decoration: underline; text-underline-offset: 4px; }
+.hero .livehint { margin-top: 18px; font-size: 0.85rem; opacity: 0.85; }
+.pill { text-decoration: none; }
+.pill.live, .pill.lost { pointer-events: none; }
 
 /* Headlines */
 h2 { font: 400 clamp(2rem, 4.2vw, 3.2rem)/1.05 var(--font-display); color: var(--ink); margin: 0 0 16px; text-wrap: balance; }
@@ -165,7 +168,7 @@ section { scroll-margin-top: 12px; }
       <a href="#floor">Floor</a>
       <a href="#stats">Today</a>
       <a href="#log">Seating log</a>
-      <span class="pill" id="mode"><i></i><span>Connecting</span></span>
+      <a class="pill" id="mode" href="http://localhost:8765" target="_blank" rel="noopener"><i></i><span>Connecting</span></a>
     </nav>
   </div>
 </header>
@@ -177,6 +180,7 @@ section { scroll-margin-top: 12px; }
         <h1>Every Party,<br>The Right Table</h1>
         <p>Guests hold up their party size at the kiosk. A camera counts the fingers, the Nano picks the best free table, and the arrow turns to point the way.</p>
         <a class="explore" href="#floor">Explore the floor <span aria-hidden="true">→</span></a>
+        <p class="livehint" id="liveHint" hidden>This is a sample day. On the kiosk laptop, with finger_count.py running, open <a href="http://localhost:8765" target="_blank" rel="noopener">localhost:8765</a> for live data.</p>
       </div>
       <div class="now" aria-live="polite">
         <small>Arrow is pointing to</small>
@@ -488,7 +492,8 @@ function render() {
   // Mode pill + notes
   const pill = $("mode");
   pill.className = "pill" + (live === true ? " live" : live === "lost" ? " lost" : "");
-  pill.lastElementChild.textContent = live === true ? "Live from the kiosk" : live === "lost" ? "Kiosk disconnected" : "Sample day";
+  pill.lastElementChild.textContent = live === true ? "Live from the kiosk" : live === "lost" ? "Kiosk disconnected" : "Sample day · Go live ↗";
+  $("liveHint").hidden = live !== false;
   $("footNote").textContent = live ? "Live: events from finger_count.py on this laptop" : "Sample data: a simulated service run through the real seating rules";
   $("zeroSide").textContent = ZERO_ON_RIGHT ? "right" : "left";
 
